@@ -92,6 +92,8 @@
  */
 
 #include <stdio.h>
+#include <ctype.h>
+#include <unistd.h>
 
 #include "httpd.h"
 #include "http_config.h"
@@ -188,7 +190,6 @@ static apr_status_t tcp_proxy_query_key (request_rec * r, TcpProxyData * tpd, ap
     /* Check we have a config and a datbase connection */
 
     apr_status_t rv;
-    const char *dbd_password = NULL;
     apr_dbd_prepared_t *statement = NULL;
     apr_dbd_results_t *res = NULL;
     apr_dbd_row_t *row = NULL;
@@ -487,7 +488,7 @@ static apr_status_t tcp_proxy_send_initial_data(request_rec * r,
 
     ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "tcp_proxy_send_initial_data: Data to hash is '%s'", tohash);
     
-    char hashdata[32];
+    unsigned char hashdata[32];
     apr_crypto_hash_t *h = apr_crypto_sha256_new(mp);
     h->init(h);
     h->add(h, tohash, strlen(tohash));
@@ -636,14 +637,11 @@ void guacdump (apr_pool_t * p, char * msg, char * buf, size_t start, size_t end)
 
 void *APR_THREAD_FUNC tcp_proxy_run(apr_thread_t * thread, void *data)
 {
-    char buffer[64];
     apr_status_t rv;
     TcpProxyData *tpd = (TcpProxyData *) data;
 
     if (!tpd)
         return NULL;
-
-    request_rec *r = (tpd->server)->request(tpd->server);
 
     apr_interval_time_t timeout = APR_USEC_PER_SEC * ((tpd->timeout)?tpd->timeout:30);
     apr_pollset_t * recvpollset = NULL;
@@ -1092,7 +1090,7 @@ static size_t CALLBACK tcp_proxy_on_message(void *plugin_private,
              * means we have to copy it
              */
             towrite = NULL;
-            unsigned char *ztbuf = calloc(1, len + 1);
+            char *ztbuf = calloc(1, len + 1);
             if (!ztbuf)
                 goto fail;
             towrite = calloc(1, len + 1);
@@ -1138,7 +1136,7 @@ static size_t CALLBACK tcp_proxy_on_message(void *plugin_private,
         
             if (num>0) {
                 apr_size_t lw = l;
-                rv = apr_socket_send(tpd->tcpsocket, p, &lw);
+                rv = apr_socket_send(tpd->tcpsocket, (char *)p, &lw);
 
                 /* move past data written */
                 l -= lw;

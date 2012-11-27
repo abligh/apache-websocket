@@ -1,8 +1,13 @@
 import os
 
-env = Environment()
+env = Environment(tools=['default', 'packaging'])
 
 debug = ARGUMENTS.get("debug", 0)
+
+if os.path.exists('/usr/bin/rpmbuild'):
+  BUILD_RPM = True
+else:
+  BUILD_RPM = False
 
 if env["PLATFORM"] == "win32":
     apachedir = "C:/Program Files/Apache Software Foundation/Apache2.2"
@@ -36,9 +41,14 @@ else:
                    SHLINKFLAGS = "-undefined dynamic_lookup")
         modulesdir = "/usr/libexec/apache2"
     else:
-        env.Append(CPPDEFINES = ["LINUX=2", "_FORTIFY_SOURCE=2", "_GNU_SOURCE", "_LARGEFILE64_SOURCE", "_REENTRANT"],
-                   CPPPATH = ["/usr/include/apache2", "/usr/include/apr-1.0"])
-        modulesdir = "/usr/lib/apache2/modules"
+        if os.path.exists('/etc/redhat-release'):
+            includes = [ '/usr/include/httpd', '/usr/include/apr-1', os.getcwd() ]
+            modulesdir = '/usr/lib64/httpd/modules'
+        else:
+            includes = [ '/usr/include/apache2', '/usr/include/apr-1.0', os.getcwd() ]
+            modulesdir = '/usr/lib/apache2/modules'
+
+        env.Append(CPPDEFINES = ["LINUX=2", "_FORTIFY_SOURCE=2", "_GNU_SOURCE", "_LARGEFILE64_SOURCE", "_REENTRANT"], CPPPATH = includes)
 
 mod_websocket = env.SharedLibrary(source=["mod_websocket.c"],
                                   SHLIBPREFIX="",
@@ -46,9 +56,31 @@ mod_websocket = env.SharedLibrary(source=["mod_websocket.c"],
 mod_websocket_draft76 = env.SharedLibrary(source=["mod_websocket_draft76.c"],
                                   SHLIBPREFIX="",
                                   SHLIBSUFFIX=".so")
+mod_websocket_vnc_proxy = env.SharedLibrary(source=["vncproxy/mod_websocket_vnc_proxy.c"],
+                                  SHLIBPREFIX="",
+                                  SHLIBSUFFIX=".so")
 
-env.Install(dir=modulesdir, source=[mod_websocket, mod_websocket_draft76])
+env.File('validate_utf8.h')
+env.File('websocket_plugin.h')
+
+files = env.Install(dir=modulesdir, source=[mod_websocket, mod_websocket_draft76, mod_websocket_vnc_proxy])
 
 # Install
 
 env.Alias("install", modulesdir)
+
+# Package
+env.Tag(files, INSTALL_LOCATION = '/usr/lib64/httpd/modules/')
+
+if BUILD_RPM:
+        env.Package(
+            source         = files,
+            NAME           = 'httpd-mod-websocket',
+            VERSION        = '1.0.0',
+            PACKAGEVERSION = 0,
+            PACKAGETYPE    = 'rpm',
+            LICENSE        = 'apache',
+            SUMMARY        = 'Apache Websocket module.',
+            DESCRIPTION    = 'Apache Websocket module.',
+            X_RPM_GROUP    = 'System Environment/Daemons',
+        )
